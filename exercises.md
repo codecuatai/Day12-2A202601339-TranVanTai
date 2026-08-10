@@ -6,7 +6,7 @@
 > Cách trả lời: thay dòng `> *Câu trả lời của bạn*` bằng câu trả lời.
 > `grade.py` đếm số câu đã trả lời (15 điểm cho 10 câu).
 >
-> Họ và tên: ..........................  Mã học viên: ..........................
+> Họ và tên: Trần Văn Tài  Mã học viên: 2A202601339
 
 ---
 
@@ -16,7 +16,13 @@ Trong `Settings`, `agent_api_key` không có giá trị mặc định nên app c
 khi khởi động nếu thiếu biến môi trường. Hãy mô tả một tình huống cụ thể mà
 việc "chết sớm" này cứu bạn, so với việc để mặc định `"changeme"`.
 
-> *Câu trả lời của bạn*
+Nếu deploy lên cloud mà quên cấu hình `AGENT_API_KEY`, `Settings` không có giá
+trị mặc định cho trường này nên Pydantic sẽ tạo `ValidationError` ngay khi
+ứng dụng khởi động. Trong code hiện tại, validator còn chặn key rỗng và các
+placeholder như `changeme`. Nhờ vậy container dừng ngay thay vì chạy bằng một
+khóa ai cũng đoán được. Nếu để mặc định `changeme`, container có thể báo
+healthy, nhận request thật và người lạ có thể gọi API hoặc làm phát sinh chi
+phí trước khi phát hiện cấu hình secret bị thiếu.
 
 ---
 
@@ -26,7 +32,25 @@ Chạy service và gọi `/ask` vài lần. Dán một dòng log JSON bạn thu 
 nêu **hai** việc bạn làm được với dòng log đó mà `print("đã trả lời xong")`
 không làm được.
 
-> *Câu trả lời của bạn*
+Mình đã chạy trực tiếp hàm `log_event()` trong code và thu được một dòng JSON:
+
+```text
+{"timestamp": "2026-08-10T03:45:03.549657+00:00", "level": "info", "event": "ask_completed", "user_id": "sv01", "latency_ms": 142}
+```
+
+Lưu ý: mình chưa thể lấy log từ việc gọi `/ask` thật vì endpoint `/ask` vẫn là
+TODO của CP3 và Uvicorn còn bị chặn bởi `lifecycle.install()` của CP4. Dòng
+trên là kết quả chạy thật của chính `log_event()`.
+
+Với dòng log có cấu trúc này, mình có thể:
+
+1. Lọc tất cả event `ask_completed` của `user_id=sv01` mà không cần đọc chuỗi
+   tự do bằng mắt.
+2. Tính hoặc cảnh báo theo các trường có kiểu rõ ràng như `latency_ms`, ví dụ
+   tìm các request có latency lớn hơn 500 ms.
+
+`print("đã trả lời xong")` không chứa tên event, user ID hoặc latency nên không
+thể lọc và thống kê chính xác như vậy.
 
 ---
 
@@ -42,12 +66,24 @@ docker images | grep agent
 
 | Bản | Dung lượng |
 |-----|-----------|
-| 1 stage (bản đầu) | ... MB |
-| Multi-stage | ... MB |
+| 1 stage (bản đầu) | Chưa đo được — Docker Hub trả lỗi 429 khi kéo `python:3.11` |
+| Multi-stage | 270 MB |
 
 Giải thích: phần dung lượng chênh lệch đó là những gì?
 
-> *Câu trả lời của bạn*
+Mình đã build thật image multi-stage bằng lệnh `docker build -t
+day12-agent:prod .` và đo được `270 MB`. Khi thử build bản 1-stage tương ứng
+với Dockerfile ban đầu, Docker Hub trả:
+
+```text
+unexpected status from HEAD request to https://registry-1.docker.io/v2/library/python/manifests/3.11: 429 Too Many Requests
+```
+
+Vì bản 1-stage chưa build thành công nên mình không điền một con số phỏng
+đoán cho nó. Phần chênh lệch kỳ vọng đến từ việc bản 1-stage giữ cả base image
+đầy đủ, pip cache, dependencies và toàn bộ build context trong cùng image;
+bản multi-stage chỉ copy dependencies đã cài và source cần chạy sang image
+`python:3.11-slim` production.
 
 ---
 
@@ -57,7 +93,21 @@ Sửa một ký tự trong `app/main.py` rồi build lại. Với Dockerfile c�
 layer nào được dùng lại từ cache, layer nào phải chạy lại? Nếu bạn đặt
 `COPY . .` lên trước `RUN pip install` thì kết quả khác thế nào?
 
-> *Câu trả lời của bạn*
+Trong Dockerfile hiện tại, `COPY requirements.txt .` đứng trước
+`RUN pip install ...`, còn `COPY app/ app/` và `COPY utils/ utils/` đứng sau.
+Vì vậy khi chỉ sửa một dòng trong `app/main.py`, Docker có thể dùng lại:
+
+- layer lấy `python:3.11-slim`;
+- `WORKDIR /build`;
+- `COPY requirements.txt .`;
+- layer `pip install`;
+- các layer trước phần source bị thay đổi.
+
+Từ layer `COPY app/ app/` trở đi, các layer runtime phía sau có thể phải tạo
+lại vì nội dung source đã thay đổi. Dependencies không cần cài lại. Nếu đặt
+`COPY . .` trước `RUN pip install`, chỉ một thay đổi nhỏ trong source cũng làm
+layer `COPY . .` thay đổi, khiến Docker phải chạy lại `pip install`; build sẽ
+chậm hơn và mất lợi ích của cache dependency.
 
 ---
 
@@ -67,7 +117,22 @@ Container mặc định chạy bằng root. Mô tả chuỗi sự kiện dẫn t
 trong code Python của bạn" tới "kẻ tấn công có quyền cao trên máy host", và
 lệnh `USER` cắt đứt chuỗi đó ở chỗ nào.
 
-> *Câu trả lời của bạn*
+Nếu container chạy bằng root và ứng dụng có lỗ hổng cho phép kẻ tấn công thực
+thi mã lệnh, process bị khai thác sẽ có quyền root bên trong container. Từ đó
+kẻ tấn công có thể đọc hoặc sửa nhiều file hơn, khai thác quyền của Docker
+socket nếu socket bị mount, hoặc tìm cách leo thang sang host tùy cấu hình
+container.
+
+Trong Dockerfile, lệnh:
+
+```dockerfile
+RUN adduser --disabled-login --no-create-home --gecos "" appuser
+USER appuser
+```
+
+chuyển process runtime sang user thường. Vì vậy ngay cả khi code bị khai thác,
+quyền ban đầu của process bị giới hạn, cắt đứt bước leo thang trực tiếp từ
+ứng dụng thành root trong container.
 
 ---
 

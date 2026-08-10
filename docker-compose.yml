@@ -1,43 +1,76 @@
-# ═══════════════════════════════════════════════════════════════════
-# CP2 — Stack chạy ở máy bạn: agent + redis (+ nginx nếu làm phần cộng điểm)
-#
-# Service `redis` đã cho sẵn — chạy ngay từ Block 1 để có Redis mà code:
-#     docker compose up -d redis
-#
-# NHIỆM VỤ: bổ sung service `agent`. Yêu cầu:
-#   [ ] build từ Dockerfile trong thư mục hiện tại
-#   [ ] map cổng ra ngoài (8000:8000)
-#   [ ] KHÔNG viết secret thẳng vào file này — dùng nội suy biến môi trường
-#       `${AGENT_API_KEY}` (docker compose tự đọc từ file .env cùng thư mục)
-#   [ ] REDIS_URL trỏ tới `redis://redis:6379/0` — trong compose, tên service
-#       chính là hostname
-#   [ ] depends_on: redis
-#   [ ] healthcheck gọi /health
-#
-# ĐIỂM CỘNG: thêm service `nginx` làm load balancer (nginx/nginx.conf đã có sẵn)
-#     docker compose up --scale agent=3
-#
-# Kiểm tra: pytest tests/test_cp2.py -v
-# ═══════════════════════════════════════════════════════════════════
+# CP2 — Redis + agent + Nginx load balancer.
 
 services:
+  # Redis lưu lịch sử hội thoại, rate limit và thông tin chi phí.
   redis:
+    # Image Redis nhỏ gọn dựa trên Alpine Linux.
     image: redis:7-alpine
+    # Bật Append Only File để Redis ghi lại các thay đổi vào volume.
     command: ["redis-server", "--appendonly", "yes"]
+    # Cho phép máy host truy cập Redis để debug local.
     ports:
       - "6379:6379"
+    # Gắn volume có tên để dữ liệu không mất khi container bị tạo lại.
     volumes:
       - redis-data:/data
+    # Redis phải trả lời PING trước khi agent được khởi động.
     healthcheck:
+      # CMD chạy trực tiếp redis-cli, không qua shell.
       test: ["CMD", "redis-cli", "ping"]
+      # Chạy kiểm tra định kỳ mỗi 10 giây.
       interval: 10s
+      # Một lần kiểm tra không được chạy quá 3 giây.
       timeout: 3s
+      # Sau 5 lần lỗi liên tiếp, Redis được coi là unhealthy.
       retries: 5
 
-  # TODO (CP2): khai báo service `agent` ở đây
-  # agent:
-  #   build: .
-  #   ...
+  # Agent là service FastAPI chạy mã ứng dụng.
+  agent:
+    # Build image bằng Dockerfile tại thư mục hiện tại.
+    build: .
+    # Chỉ công bố cổng cho các container cùng network, không public ra host.
+    expose:
+      - "8000"
+    # Truyền cấu hình vào container dưới dạng environment variables.
+    environment:
+      # Compose lấy secret từ environment hoặc file .env, không hardcode vào YAML.
+      AGENT_API_KEY: ${AGENT_API_KEY:?set AGENT_API_KEY in .env}
+      # Trong network Compose, hostname Redis chính là tên service `redis`.
+      REDIS_URL: redis://redis:6379/0
+      # Cổng nội bộ agent dùng; Nginx sẽ forward request tới cổng này.
+      PORT: "8000"
+    # Agent chỉ khởi động sau khi Redis đạt trạng thái healthy.
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Docker dùng probe này để biết agent đã thực sự phục vụ HTTP chưa.
+    healthcheck:
+      # Dùng Python có sẵn trong image để gọi endpoint liveness.
+      test: ["CMD", "python", "-c", "import os, urllib.request; port = os.getenv('PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3)"]
+      # Kiểm tra agent mỗi 10 giây.
+      interval: 10s
+      # Probe quá 5 giây được xem là thất bại.
+      timeout: 5s
+      # Cần 3 lần lỗi để đánh dấu agent unhealthy.
+      retries: 3
+      # Cho agent tối đa 10 giây khởi động trước khi bắt đầu tính lỗi.
+      start_period: 10s
 
+  # Nginx là entrypoint public và load balancer phía trước agent.
+  nginx:
+    # Dùng image Nginx Alpine nhỏ gọn.
+    image: nginx:1.27-alpine
+    # Map cổng 8000 của host vào cổng 80 của Nginx.
+    ports:
+      - "8000:80"
+    # Mount cấu hình Nginx ở chế độ chỉ đọc để container không sửa file host.
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    # Nginx chỉ khởi động sau khi container agent được tạo.
+    depends_on:
+      - agent
+
+# Volume được Docker quản lý, dùng để giữ dữ liệu Redis ngoài container.
 volumes:
+  # Tên volume này được các service Redis dùng làm nơi lưu /data.
   redis-data:

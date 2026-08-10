@@ -1,6 +1,21 @@
-# TODO (CP2): file này quyết định thứ KHÔNG được copy vào image.
-# Bỏ sót .env = leak secret vào image. Bỏ sót .git = image phình to.
-# Bổ sung đủ các mục còn thiếu — xem tests/test_cp2.py để biết yêu cầu.
+# Secrets và file môi trường local không được đưa vào Docker build context.
+# Nếu không ignore, .env có thể bị copy vào image và làm lộ API key.
+.env
 
-.git
-.gitignore
+# Virtual environment và cache Python không cần trong image.
+# Virtual environment trên Windows không tương thích với Linux container.
+.venv/
+# Python tạo thư mục bytecode này khi import module.
+__pycache__/
+# File bytecode đã biên dịch không cần vì image sẽ tự tạo bytecode phù hợp.
+*.pyc
+# Cache test chỉ làm build context lớn hơn.
+.pytest_cache/
+
+# Git metadata, screenshot và file build không cần cho runtime.
+# Không đưa lịch sử commit và thông tin repository vào image.
+.git/
+# Screenshot phục vụ bài lab, không cần cho service production.
+screenshots/
+# Metadata của package local không cần trong runtime image.
+*.egg-info/
