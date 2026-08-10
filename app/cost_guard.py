@@ -4,19 +4,24 @@ Rate limit giới hạn *số lượng* request. Cost guard giới hạn *số t
 user gửi 10 request/phút nhưng mỗi request 50k token vẫn đốt sạch ngân sách.
 """
 
+# Cho phép dùng union type trong chữ ký hàm.
 from __future__ import annotations
 
+# Lấy tháng hiện tại theo UTC để mọi instance dùng cùng nhãn tháng.
 from datetime import datetime, timezone
 
+# HTTPException trả 402; status cung cấp mã HTTP có tên rõ nghĩa.
 from fastapi import HTTPException, status
 
-# Giữ dữ liệu chi tiêu thêm ~40 ngày để còn đối soát sang tháng sau
+# Giữ dữ liệu chi tiêu khoảng 40 ngày để còn đối soát sang tháng sau.
 KEY_TTL_SECONDS = 40 * 24 * 3600
 
 
 class CostGuard:
     def __init__(self, client, monthly_budget_usd: float) -> None:
+        # Redis lưu tổng chi phí dùng chung giữa các instance.
         self.client = client
+        # Budget tối đa của một user trong một tháng.
         self.budget = monthly_budget_usd
 
     @staticmethod
@@ -32,11 +37,14 @@ class CostGuard:
     def spent(self, user_id: str, month: str | None = None) -> float:
         """Số tiền user đã tiêu trong tháng.
 
-        TODO (CP3): đọc ``self.client.get(self._key(user_id, month))``.
-        Key chưa tồn tại → Redis trả None → hàm này phải trả ``0.0``.
-        Nhớ ép kiểu ``float(...)`` vì Redis trả về chuỗi.
+        Key chưa tồn tại được coi là tổng chi phí bằng 0.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt spent")
+        # Redis trả None khi user chưa có chi phí trong tháng.
+        value = self.client.get(self._key(user_id, month))
+        if value is None:
+            return 0.0
+        # Redis thường trả chuỗi, nên chuẩn hóa thành float.
+        return float(value)
 
     def check(
         self,
@@ -46,18 +54,23 @@ class CostGuard:
     ) -> None:
         """Cho qua nếu còn ngân sách, ngược lại raise 402.
 
-        TODO (CP3): nếu ``spent(user_id) + estimated_cost > self.budget``
-        → raise ``HTTPException(status_code=402, detail="monthly budget exceeded")``.
-        402 = Payment Required, đúng ngữ nghĩa cho tình huống hết ngân sách.
+        Đây là pre-check: chặn trước khi gọi LLM nếu đã vượt ngân sách.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt check")
+        # Chặn trước khi gọi LLM nếu chi phí dự kiến vượt budget.
+        if self.spent(user_id, month) + estimated_cost > self.budget:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="monthly budget exceeded",
+            )
 
     def record(self, user_id: str, cost: float, month: str | None = None) -> float:
         """Cộng dồn chi phí vừa phát sinh, trả về tổng mới.
 
-        TODO (CP3):
-          1. ``total = self.client.incrbyfloat(key, cost)``
-          2. ``self.client.expire(key, KEY_TTL_SECONDS)``
-          3. ``return float(total)``
+        Đây là post-record: cộng chi phí thực tế sau khi LLM trả kết quả.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt record")
+        # Redis thực hiện cộng dồn ở server để các instance dùng chung tổng.
+        key = self._key(user_id, month)
+        total = self.client.incrbyfloat(key, cost)
+        # Giữ dữ liệu khoảng 40 ngày để đối soát rồi tự dọn.
+        self.client.expire(key, KEY_TTL_SECONDS)
+        return float(total)

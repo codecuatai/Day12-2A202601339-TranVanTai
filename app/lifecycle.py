@@ -9,8 +9,10 @@ lần bạn deploy.
 balancer ngừng đẩy traffic mới vào → xử lý nốt request đang chạy → thoát.
 """
 
+# Cho phép dùng type hint hiện đại mà không đánh giá sớm.
 from __future__ import annotations
 
+# Module chuẩn của Python để nhận SIGTERM/SIGINT.
 import signal
 
 
@@ -18,6 +20,7 @@ class Lifecycle:
     """Giữ trạng thái vòng đời của process."""
 
     def __init__(self) -> None:
+        # Cờ này được health/readiness endpoint đọc để trả 503 khi shutdown.
         self.shutting_down = False
         # Handler đã được đăng ký trước ta (của uvicorn) — xem install()
         self._previous: dict = {}
@@ -44,7 +47,14 @@ class Lifecycle:
         tham số này. Không làm gì nặng ở đây (không gọi mạng, không ghi file)
         — handler chạy xen giữa bytecode.
         """
-        raise NotImplementedError("TODO (CP4): cài đặt request_shutdown")
+        # Signal handler chỉ bật cờ, không thực hiện I/O hoặc công việc nặng.
+        self.shutting_down = True
+
+        # Handler của Lifecycle đã ghi đè handler cũ của Uvicorn.
+        previous = self._previous.get(signum)
+        if callable(previous):
+            # Nhường lại cho server để quá trình shutdown thật sự tiếp tục.
+            previous(signum, frame)
 
     def install(self) -> None:
         """Đăng ký handler cho SIGTERM và SIGINT, nhớ lại handler cũ.
@@ -56,7 +66,12 @@ class Lifecycle:
 
         SIGTERM: orchestrator yêu cầu tắt. SIGINT: bạn bấm Ctrl+C.
         """
-        raise NotImplementedError("TODO (CP4): cài đặt install")
+        # Lưu handler hiện tại trước khi đăng ký handler mới.
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            # Nhớ handler của Uvicorn hoặc handler trước đó.
+            self._previous[sig] = signal.getsignal(sig)
+            # Đăng ký bound method; Python sẽ gọi method với signal/frame.
+            signal.signal(sig, self.request_shutdown)
 
 
 # Một instance dùng chung cho cả app

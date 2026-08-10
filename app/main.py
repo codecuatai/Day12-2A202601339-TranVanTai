@@ -136,34 +136,48 @@ def ask(
 ):
     """Hỏi agent một câu.
 
-    TODO (CP3 + CP4) — làm ĐÚNG THỨ TỰ sau:
-      1. ``limiter.check(user_id)``           → 429 nếu gọi quá nhanh
-      2. ``guard.check(user_id)``             → 402 nếu hết ngân sách
-      3. ``history = store.get_history(user_id)``
-      4. ``result = ask_llm(payload.question, history)``
-      5. ``store.append(user_id, "user", payload.question)`` và
-         ``store.append(user_id, "assistant", result["answer"])``
-      6. ``guard.record(user_id, result["cost_usd"])``
-      7. ``log_event("ask_completed", user_id=user_id,
-         tokens_in=result["tokens_in"], tokens_out=result["tokens_out"],
-         cost_usd=result["cost_usd"])``
-      8. trả về::
-
-            {
-                "answer": result["answer"],
-                "user_id": user_id,
-                "history_length": len(history),
-                "cost_usd": result["cost_usd"],
-                "tokens": {"in": result["tokens_in"], "out": result["tokens_out"]},
-            }
-
     Vì sao check trước rồi mới gọi LLM? Vì tiền mất ở bước gọi LLM. Chặn sau
     khi đã gọi thì bạn vừa trả tiền vừa trả lỗi.
 
     ``user_id`` do ``verify_api_key`` trả về, nên request không có API key
     hợp lệ sẽ dừng ở 401 trước khi chạm vào bất cứ dòng nào ở đây.
     """
-    raise NotImplementedError("TODO (CP3/CP4): cài đặt /ask")
+    # Chặn request quá nhanh trước khi gọi LLM.
+    limiter.check(user_id)
+    # Chặn user đã vượt ngân sách trước khi gọi LLM.
+    guard.check(user_id)
+
+    # Đọc lịch sử dùng chung từ Redis.
+    history = store.get_history(user_id)
+    # Gọi mock LLM sau khi đã qua các lớp bảo vệ.
+    result = ask_llm(payload.question, history)
+
+    # Lưu câu hỏi và câu trả lời để request tiếp theo dùng lại context.
+    store.append(user_id, "user", payload.question)
+    store.append(user_id, "assistant", result["answer"])
+
+    # Ghi nhận chi phí thực tế sau khi LLM trả kết quả.
+    guard.record(user_id, result["cost_usd"])
+    # Xuất structured log cho hệ thống cloud.
+    log_event(
+        "ask_completed",
+        user_id=user_id,
+        tokens_in=result["tokens_in"],
+        tokens_out=result["tokens_out"],
+        cost_usd=result["cost_usd"],
+    )
+
+    # Trả về kết quả và độ dài history trước lượt hỏi hiện tại.
+    return {
+        "answer": result["answer"],
+        "user_id": user_id,
+        "history_length": len(history),
+        "cost_usd": result["cost_usd"],
+        "tokens": {
+            "in": result["tokens_in"],
+            "out": result["tokens_out"],
+        },
+    }
 
 
 if __name__ == "__main__":
