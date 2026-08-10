@@ -38,9 +38,9 @@ Mình đã chạy trực tiếp hàm `log_event()` trong code và thu được m
 {"timestamp": "2026-08-10T03:45:03.549657+00:00", "level": "info", "event": "ask_completed", "user_id": "sv01", "latency_ms": 142}
 ```
 
-Lưu ý: mình chưa thể lấy log từ việc gọi `/ask` thật vì endpoint `/ask` vẫn là
-TODO của CP3 và Uvicorn còn bị chặn bởi `lifecycle.install()` của CP4. Dòng
-trên là kết quả chạy thật của chính `log_event()`.
+Lưu ý: dòng trên là kết quả chạy thật của chính `log_event()` để kiểm tra
+structured logging. Endpoint `/ask` đã được hoàn thành ở CP3 và CP4; dòng log
+minh họa này không được ghi giả là output của một request cloud cụ thể.
 
 Với dòng log có cấu trúc này, mình có thể:
 
@@ -232,9 +232,23 @@ Ghi lại **một** lỗi bạn gặp khi deploy lên cloud (build fail, health 
 timeout, sai REDIS_URL, app không đọc `$PORT`...): thông báo lỗi là gì, bạn
 tìm ra nguyên nhân bằng cách nào, và sửa ra sao?
 
-Mình chưa thực hiện deploy lên Railway nên chưa có lỗi cloud-specific để ghi
-như health check timeout hoặc sai `REDIS_URL`. Một lỗi build thật đã gặp khi
-kiểm tra phần Docker trước khi deploy là:
+Khi deploy lên Railway, healthcheck thất bại với log:
+
+```text
+Error: Invalid value for '--port': '$PORT' is not a valid integer.
+```
+
+Mình xác định nguyên nhân bằng cách đọc runtime log: Railway đang truyền
+nguyên chuỗi `$PORT` cho Uvicorn thay vì thay bằng cổng được cấp. Nguyên nhân
+là `startCommand` trong `railway.toml` chưa chạy qua shell. Mình sửa thành:
+
+```toml
+startCommand = "sh -c 'exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+```
+
+Sau khi push bản sửa, `/health` và `/ready` trên Railway lần lượt trả 200.
+
+Trước đó, một lỗi build thật khác đã gặp khi kiểm tra phần Docker là:
 
 ```text
 unexpected status from HEAD request to https://registry-1.docker.io/v2/library/python/manifests/3.11-slim: 429 Too Many Requests
@@ -243,6 +257,4 @@ unexpected status from HEAD request to https://registry-1.docker.io/v2/library/p
 Mình xác định nguyên nhân bằng cách đọc build output: lỗi xảy ra ở bước Docker
 lấy metadata image nền từ Docker Hub, trước khi chạy code ứng dụng, nên không
 phải lỗi FastAPI hay Dockerfile. Sau khi Docker Hub cho phép request lại, build
-đã thành công và image multi-stage có dung lượng thực tế `270 MB`. Phần deploy
-Railway và URL public sẽ được cập nhật sau khi mình kết nối repository và tạo
-Redis service trên Railway.
+đã thành công và image multi-stage có dung lượng thực tế `270 MB`.

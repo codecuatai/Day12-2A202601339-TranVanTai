@@ -15,10 +15,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from fastapi.staticfiles import StaticFiles
 
 from utils.mock_llm import ask_llm
 
@@ -32,6 +34,7 @@ from .store import ConversationStore, get_redis_client
 
 SERVICE_NAME = "day12-agent"
 SERVICE_VERSION = "1.0.0"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -65,9 +68,25 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Day 12 Production Agent", version=SERVICE_VERSION, lifespan=lifespan)
 
+# Phục vụ frontend tĩnh từ cùng service để Railway chỉ cần deploy một container.
+# Thư mục này chỉ chứa HTML/CSS/JavaScript, không chứa secret hay file `.env`.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Đưa người dùng vào giao diện chat thay vì trả 404 ở root URL."""
+    return RedirectResponse(url="/chat", status_code=307)
+
+
+@app.get("/chat", include_in_schema=False)
+def chat_page():
+    """Trả về trang chat chính cho người dùng cuối."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -121,6 +140,22 @@ def ready(store: ConversationStore = Depends(get_store)):
 
     # Process và Redis đều hoạt động, instance sẵn sàng nhận request.
     return {"status": "ready", "redis": True}
+
+
+@app.get("/api/history")
+def history(
+    user_id: str = Depends(verify_api_key),
+    store: ConversationStore = Depends(get_store),
+):
+    """Đọc lịch sử chat cho frontend sau khi request đã qua auth.
+
+    API key vẫn bắt buộc như `/ask`; frontend không được tự ý đọc history của
+    user khác. Redis là nguồn dữ liệu chung nên history vẫn tồn tại khi scale.
+    """
+    return {
+        "user_id": user_id,
+        "messages": store.get_history(user_id),
+    }
 
 
 # ─────────────────────────────────────────────────────────────

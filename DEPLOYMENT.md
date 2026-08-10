@@ -18,9 +18,9 @@
 
 | Mục | Nội dung |
 |-----|----------|
-| Public URL | Chưa deploy Railway — cập nhật URL HTTPS sau khi deploy |
+| Public URL | https://day12-agent-production-3b14.up.railway.app |
 | Platform | Railway |
-| Ngày deploy | Chưa deploy |
+| Ngày deploy | 2026-08-10 |
 
 ## Biến Môi Trường Đã Set Trên Cloud
 
@@ -28,31 +28,31 @@ Ghi tên biến và **nguồn giá trị**, không ghi giá trị:
 
 | Biến | Đã set | Ghi chú |
 |------|--------|---------|
-| `PORT` | Chờ Railway | platform tự gán |
-| `AGENT_API_KEY` | Chờ Railway | đặt trong dashboard, không nằm trong repo |
-| `REDIS_URL` | Chờ Railway | reference tới Redis service của Railway |
-| `RATE_LIMIT_PER_MINUTE` | Sẽ đặt | 10 |
-| `MONTHLY_BUDGET_USD` | Sẽ đặt | 10.0 |
-| `LOG_LEVEL` | Sẽ đặt | INFO |
+| `PORT` | Đã set tự động | Railway tự gán |
+| `AGENT_API_KEY` | Đã set | đặt trong dashboard, không nằm trong repo |
+| `REDIS_URL` | Đã set | reference tới Redis service `day12-redis` |
+| `RATE_LIMIT_PER_MINUTE` | Đã set | 10 |
+| `MONTHLY_BUDGET_USD` | Đã set | 10.0 |
+| `LOG_LEVEL` | Đã set | INFO |
 
 ## Lệnh Kiểm Tra
 
-Thay `<URL>` bằng Public URL ở trên:
+Public URL dùng để kiểm tra:
 
 ```bash
 # 1. Liveness — mong đợi 200 {"status":"ok"}
-curl -i <URL>/health
+curl -i https://day12-agent-production-3b14.up.railway.app/health
 
 # 2. Readiness — mong đợi 200 {"status":"ready"} (đã nối được Redis)
-curl -i <URL>/ready
+curl -i https://day12-agent-production-3b14.up.railway.app/ready
 
 # 3. Không có API key — mong đợi 401
-curl -i -X POST <URL>/ask \
+curl -i -X POST https://day12-agent-production-3b14.up.railway.app/ask \
   -H "Content-Type: application/json" \
   -d '{"question":"Hello"}'
 
 # 4. Có API key — mong đợi 200 kèm câu trả lời
-curl -i -X POST <URL>/ask \
+curl -i -X POST https://day12-agent-production-3b14.up.railway.app/ask \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $AGENT_API_KEY" \
   -H "X-User-Id: sv-test" \
@@ -60,7 +60,7 @@ curl -i -X POST <URL>/ask \
 
 # 5. Rate limit — gọi 15 lần, những lần cuối phải trả 429
 for i in $(seq 1 15); do
-  curl -s -o /dev/null -w "%{http_code} " -X POST <URL>/ask \
+  curl -s -o /dev/null -w "%{http_code} " -X POST https://day12-agent-production-3b14.up.railway.app/ask \
     -H "Content-Type: application/json" \
     -H "X-API-Key: $AGENT_API_KEY" \
     -H "X-User-Id: sv-test" \
@@ -73,15 +73,25 @@ done; echo
 Dán output của các lệnh trên vào đây:
 
 ```
-Chưa deploy Railway — sẽ dán output thật sau khi có public URL.
+GET /health → HTTP 200
+{"status":"ok","service":"day12-agent","version":"1.0.0"}
+
+GET /ready → HTTP 200
+{"status":"ready","redis":true}
+
+POST /ask không có API key → HTTP 401
+{"detail":"invalid or missing API key"}
+
+POST /ask có API key thật → HTTP 200
+Response có `user_id: "cp5-test"`, `history_length: 0`, `cost_usd: 2.265e-05`.
 ```
 
 ## Ảnh Chụp Màn Hình
 
 Đặt ảnh trong thư mục `screenshots/`:
 
-- `screenshots/dashboard.png` — chưa có, chụp sau khi Railway deploy thành công
-- `screenshots/health.png` — chưa có, chụp kết quả gọi các endpoint live
+- `screenshots/image.png` — dashboard Railway hiển thị deployment thành công
+- `screenshots/health.png` — cần chụp kết quả gọi các endpoint live
 
 ---
 

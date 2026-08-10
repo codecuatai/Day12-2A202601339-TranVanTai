@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Day 12 Agent — Chat</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="app-card" aria-label="Day 12 Agent chat">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">CLOUD SERVICES & DEPLOYMENT</p>
+            <h1>Day 12 Agent</h1>
+            <p class="subtitle">Trò chuyện với agent có Redis history và cost guard.</p>
+          </div>
+          <span id="status-badge" class="status-badge">Chưa kết nối</span>
+        </header>
+
+        <section class="settings" aria-label="Cấu hình phiên chat">
+          <label>
+            API key
+            <input id="api-key" type="password" autocomplete="off" placeholder="Nhập AGENT_API_KEY" />
+          </label>
+          <label>
+            User ID
+            <input id="user-id" value="web-user" maxlength="100" autocomplete="off" />
+          </label>
+          <button id="load-history" class="secondary-button" type="button">Tải lịch sử</button>
+        </section>
+
+        <section id="messages" class="messages" aria-live="polite" aria-label="Lịch sử trò chuyện">
+          <div class="empty-state">Nhập API key rồi gửi câu hỏi đầu tiên.</div>
+        </section>
+
+        <form id="chat-form" class="composer">
+          <label class="sr-only" for="question">Câu hỏi</label>
+          <textarea id="question" rows="2" maxlength="2000" placeholder="Viết câu hỏi... (Enter để gửi, Shift+Enter để xuống dòng)"></textarea>
+          <button id="send-button" class="send-button" type="submit">Gửi</button>
+        </form>
+
+        <footer class="footer">
+          <span id="usage">Chưa có request</span>
+          <span>API key chỉ được giữ trong phiên trình duyệt.</span>
+        </footer>
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
