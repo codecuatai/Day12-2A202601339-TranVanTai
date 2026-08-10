@@ -143,7 +143,16 @@ phút đồng hồ (reset lúc giây 00), một người dùng có thể gửi t
 request trong 2 giây liên tiếp khi hạn mức là 10/phút? Giải thích cách đạt được
 con số đó.
 
-> *Câu trả lời của bạn*
+Nếu hạn mức là 10 request/phút nhưng dùng fixed window reset ở giây 00, user
+có thể gửi tối đa **20 request trong khoảng 2 giây**. Cụ thể, gửi 10 request
+ở `10:00:59`, ngay trước khi cửa sổ cũ kết thúc, rồi gửi thêm 10 request ở
+`10:01:00` hoặc `10:01:01`, sau khi bộ đếm đã reset. Hai nhóm đều được chấp
+nhận vì rơi vào hai phút khác nhau, dù thực tế xảy ra gần như liên tiếp.
+
+Sliding window trong `app/rate_limiter.py` tránh lỗi này bằng cách lưu timestamp
+từng request trong Redis Sorted Set, xóa request cũ hơn 60 giây rồi mới đếm.
+Test CP3 kiểm tra rằng request trong cùng cửa sổ bị trả 429 và được gọi lại
+sau khi request cũ ra khỏi cửa sổ.
 
 ---
 
@@ -152,7 +161,25 @@ con số đó.
 Hai cơ chế này khác nhau ở điểm nào? Cho một tình huống mà rate limit cho qua
 nhưng cost guard phải chặn, và một tình huống ngược lại.
 
-> *Câu trả lời của bạn*
+Rate limit bảo vệ hạ tầng bằng cách giới hạn **tốc độ/số lượng request** trong
+60 giây. Cost guard bảo vệ ngân sách bằng cách cộng dồn **chi phí USD theo user
+và theo tháng** trong Redis.
+
+Ví dụ rate limit cho qua nhưng cost guard chặn: user chỉ gửi 1 request mỗi
+phút nên không vượt hạn mức 10 request/phút, nhưng trước request mới đã tiêu
+`10.20 USD` trong tháng trong khi budget là `10.00 USD`. `guard.check()` sẽ
+trả lỗi `402 Payment Required` trước khi gọi LLM.
+
+Ví dụ cost guard còn cho qua nhưng rate limit chặn: user gửi 4 request liên
+tiếp trong một phút, mỗi request chỉ tốn một khoản rất nhỏ và tổng chi phí
+vẫn dưới `10.00 USD`, nhưng rate limit đang là 3 request/phút. Request thứ tư
+sẽ bị trả `429 Too Many Requests`.
+
+Kết quả chạy thực tế của `pytest tests/test_cp3.py -q` là:
+
+```text
+22 passed in 0.61s
+```
 
 ---
 
@@ -161,7 +188,13 @@ nhưng cost guard phải chặn, và một tình huống ngược lại.
 Nếu gộp hai endpoint làm một và cho nó kiểm tra Redis, chuyện gì xảy ra với cụm
 3 container khi Redis mất kết nối 30 giây? Trả lời theo đúng thứ tự sự kiện.
 
-> *Câu trả lời của bạn*
+Nếu gộp hai endpoint và endpoint đó kiểm tra Redis, khi Redis mất kết nối thì
+cả 3 container đều báo unhealthy. Orchestrator có thể restart cả 3 container
+cùng lúc. Trong 30 giây Redis lỗi, các container mới cũng không kết nối được
+Redis nên tiếp tục bị restart; khi Redis hoạt động lại thì cụm có thể không còn
+instance sẵn sàng phục vụ. Tách endpoint giúp `/health` chỉ kiểm tra process,
+còn `/ready` báo 503 để load balancer ngừng gửi traffic mà không restart oan
+container.
 
 ---
 
@@ -171,7 +204,25 @@ Chạy `docker compose up --scale agent=3` rồi gọi `/ask` nhiều lần vớ
 `X-User-Id`. Quan sát `history_length` trong response. Nếu lịch sử được lưu
 trong một dict Python thay vì Redis, bạn sẽ thấy con số đó thay đổi thế nào?
 
-> *Câu trả lời của bạn*
+Mình đã chạy Compose với 3 agent replicas và gọi qua Nginx bằng cùng một
+`X-User-Id`. Kết quả thực tế là:
+
+```text
+request=1 history_length=0
+request=2 history_length=2
+request=3 history_length=4
+request=4 history_length=6
+request=5 history_length=8
+```
+
+Ngoài ra, `docker compose ps` cho thấy cả 3 agent và Redis đều ở trạng thái
+`healthy`, `/health` trả `status=ok`, `/ready` trả `status=ready, redis=true`.
+
+Nếu lưu history trong một dict Python, mỗi container sẽ có một dict riêng.
+Request rơi vào container mới hoặc container chưa có history có thể lại thấy
+`history_length=0` (sau đó tăng riêng trong container đó), nên kết quả sẽ nhảy
+hoặc reset tùy Nginx điều phối request. Lưu Redis giúp cả 3 container thấy cùng
+một danh sách history dùng chung.
 
 ---
 
