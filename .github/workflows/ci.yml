@@ -1,0 +1,79 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # CI: kiểm tra code trên một máy sạch trước khi cho phép deploy.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    env:
+      # Chỉ là giá trị giả cho test; secret production không được đưa vào CI.
+      AGENT_API_KEY: ci-dummy
+      REDIS_URL: fake://
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run application tests
+        # CP5 gọi Internet tới Railway; bonus test kiểm tra chính workflow này,
+        # nên cả hai được loại khỏi CI để tránh phụ thuộc mạng/vòng lặp.
+        run: >-
+          python -m pytest tests/ -q
+          --ignore=tests/test_cp5.py
+          --ignore=tests/test_bonus_cicd.py
+
+  # CI: xác nhận Dockerfile build được trên runner Linux sạch.
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build -t day12-agent:ci .
+
+  # CD: chỉ deploy code đã vượt qua test và build.
+  deploy:
+    name: Deploy to Railway
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      # Các giá trị này được tạo trong GitHub Settings → Secrets and variables.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+      RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+      RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli
+
+      - name: Deploy verified commit
+        run: >-
+          railway up --ci
+          --project "$RAILWAY_PROJECT_ID"
+          --environment "$RAILWAY_ENVIRONMENT_ID"
+          --service "$RAILWAY_SERVICE_ID"
+          --message "GitHub Actions ${GITHUB_SHA}"
