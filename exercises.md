@@ -3,7 +3,7 @@
 > **Bài làm cá nhân.** Trả lời bằng lời của chính bạn, dựa trên những gì bạn
 > quan sát được khi chạy code — không sao chép đáp án của người khác.
 >
-> Cách trả lời: thay dòng `> *Câu trả lời của bạn*` bằng câu trả lời.
+> Cách trả lời: thay dòng gợi ý ở mỗi câu bằng câu trả lời của bạn.
 > `grade.py` đếm số câu đã trả lời (15 điểm cho 10 câu).
 >
 > Họ và tên: Trần Văn Tài  Mã học viên: 2A202601339
@@ -232,4 +232,17 @@ Ghi lại **một** lỗi bạn gặp khi deploy lên cloud (build fail, health 
 timeout, sai REDIS_URL, app không đọc `$PORT`...): thông báo lỗi là gì, bạn
 tìm ra nguyên nhân bằng cách nào, và sửa ra sao?
 
-> *Câu trả lời của bạn*
+Mình chưa thực hiện deploy lên Railway nên chưa có lỗi cloud-specific để ghi
+như health check timeout hoặc sai `REDIS_URL`. Một lỗi build thật đã gặp khi
+kiểm tra phần Docker trước khi deploy là:
+
+```text
+unexpected status from HEAD request to https://registry-1.docker.io/v2/library/python/manifests/3.11-slim: 429 Too Many Requests
+```
+
+Mình xác định nguyên nhân bằng cách đọc build output: lỗi xảy ra ở bước Docker
+lấy metadata image nền từ Docker Hub, trước khi chạy code ứng dụng, nên không
+phải lỗi FastAPI hay Dockerfile. Sau khi Docker Hub cho phép request lại, build
+đã thành công và image multi-stage có dung lượng thực tế `270 MB`. Phần deploy
+Railway và URL public sẽ được cập nhật sau khi mình kết nối repository và tạo
+Redis service trên Railway.

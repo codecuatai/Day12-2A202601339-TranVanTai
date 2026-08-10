@@ -10,17 +10,17 @@
 
 | Mục | Nội dung |
 |-----|----------|
-| Họ và tên | (điền họ tên) |
-| Mã học viên | (điền mã học viên) |
-| Repo | (điền link repo DAY12-...) |
+| Họ và tên | Trần Văn Tài |
+| Mã học viên | 2A202601339 |
+| Repo | https://github.com/codecuatai/Day12-2A202601339-TranVanTai |
 
 ## Service
 
 | Mục | Nội dung |
 |-----|----------|
-| Public URL | https://TODO-thay-bang-url-that.up.railway.app |
-| Platform | Railway / Render / Cloud Run — (điền platform bạn dùng) |
-| Ngày deploy | (điền ngày) |
+| Public URL | Chưa deploy Railway — cập nhật URL HTTPS sau khi deploy |
+| Platform | Railway |
+| Ngày deploy | Chưa deploy |
 
 ## Biến Môi Trường Đã Set Trên Cloud
 
@@ -28,12 +28,12 @@ Ghi tên biến và **nguồn giá trị**, không ghi giá trị:
 
 | Biến | Đã set | Ghi chú |
 |------|--------|---------|
-| `PORT` | ✅ | platform tự gán |
-| `AGENT_API_KEY` | ✅ | đặt trong dashboard, không nằm trong repo |
-| `REDIS_URL` | ✅ | (điền: Redis add-on của platform / Upstash / ...) |
-| `RATE_LIMIT_PER_MINUTE` | ✅ | 10 |
-| `MONTHLY_BUDGET_USD` | ✅ | 10.0 |
-| `LOG_LEVEL` | ✅ | INFO |
+| `PORT` | Chờ Railway | platform tự gán |
+| `AGENT_API_KEY` | Chờ Railway | đặt trong dashboard, không nằm trong repo |
+| `REDIS_URL` | Chờ Railway | reference tới Redis service của Railway |
+| `RATE_LIMIT_PER_MINUTE` | Sẽ đặt | 10 |
+| `MONTHLY_BUDGET_USD` | Sẽ đặt | 10.0 |
+| `LOG_LEVEL` | Sẽ đặt | INFO |
 
 ## Lệnh Kiểm Tra
 
@@ -73,15 +73,15 @@ done; echo
 Dán output của các lệnh trên vào đây:
 
 ```
-(điền output)
+Chưa deploy Railway — sẽ dán output thật sau khi có public URL.
 ```
 
 ## Ảnh Chụp Màn Hình
 
 Đặt ảnh trong thư mục `screenshots/`:
 
-- `screenshots/dashboard.png` — trang quản lý service trên platform
-- `screenshots/health.png` — kết quả gọi `/health` từ trình duyệt hoặc curl
+- `screenshots/dashboard.png` — chưa có, chụp sau khi Railway deploy thành công
+- `screenshots/health.png` — chưa có, chụp kết quả gọi các endpoint live
 
 ---
 
@@ -97,5 +97,5 @@ Không đăng ký được tài khoản cloud? Vẫn nộp được bài, nhưng
 5. Ghi rõ lý do không deploy được vào phần dưới đây:
 
 ```
-(điền lý do nếu dùng phương án dự phòng, ngược lại xóa mục này)
+Không dùng local fallback; đang chờ deploy Railway.
 ```
