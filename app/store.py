@@ -47,11 +47,16 @@ class ConversationStore:
     def ping(self) -> bool:
         """Redis có trả lời không? Dùng cho endpoint /ready.
 
-        TODO (CP4): gọi ``self.client.ping()`` trong try/except.
-        Trả ``True`` nếu thành công, ``False`` nếu có bất kỳ Exception nào
-        (mất mạng, sai mật khẩu, Redis chưa khởi động...).
+        Trả ``True`` nếu Redis phản hồi thành công, ``False`` nếu có lỗi
+        kết nối như mất mạng, sai mật khẩu hoặc Redis chưa khởi động.
         """
-        raise NotImplementedError("TODO (CP4): cài đặt ping")
+        try:
+            # Redis client trả về True khi server phản hồi lệnh PING.
+            self.client.ping()
+            return True
+        except Exception:
+            # Readiness không được làm app crash chỉ vì dependency tạm thời lỗi.
+            return False
 
     def append(self, user_id: str, role: str, content: str) -> None:
         """Ghi thêm một lượt vào lịch sử.

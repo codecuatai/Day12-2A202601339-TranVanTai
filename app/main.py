@@ -77,32 +77,50 @@ class AskRequest(BaseModel):
 def health():
     """Liveness probe — process còn sống không?
 
-    TODO (CP1 + CP4):
-      - Đang tắt dần (``lifecycle.shutting_down``) → trả
-        ``JSONResponse(status_code=503, content={"status": "shutting_down"})``
-      - Bình thường → ``{"status": "ok", "service": SERVICE_NAME,
-        "version": SERVICE_VERSION}`` (mặc định FastAPI trả 200).
-
     Endpoint này phải **nhẹ**: không gọi Redis, không query DB. Nó chỉ trả
     lời câu hỏi "có cần restart container này không?". Nếu nó phụ thuộc
     Redis, Redis chết một nhịp là cả cụm container bị restart theo.
     """
-    raise NotImplementedError("TODO (CP1/CP4): cài đặt /health")
+    # Khi nhận tín hiệu shutdown, báo 503 để load balancer ngừng gửi request mới.
+    if lifecycle.shutting_down:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "shutting_down"},
+        )
+
+    # Liveness chỉ kiểm tra process còn chạy; không kiểm tra Redis hay dependency.
+    return {
+        "status": "ok",
+        "service": SERVICE_NAME,
+        "version": SERVICE_VERSION,
+    }
 
 
 @app.get("/ready")
 def ready(store: ConversationStore = Depends(get_store)):
     """Readiness probe — đã sẵn sàng nhận traffic chưa?
 
-    TODO (CP4):
-      - Đang tắt dần → 503 ``{"status": "shutting_down"}``
-      - ``store.ping()`` False → 503 ``{"status": "not ready", "redis": False}``
-      - Ngược lại → ``{"status": "ready", "redis": True}``
-
     Khác /health ở chỗ: endpoint này ĐƯỢC PHÉP kiểm tra dependency. Load
     balancer dùng nó để quyết định có đẩy request vào instance này không.
     """
-    raise NotImplementedError("TODO (CP4): cài đặt /ready")
+    # Shutdown khiến instance không còn nhận traffic mới, dù Redis vẫn hoạt động.
+    if lifecycle.shutting_down:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "shutting_down"},
+        )
+
+    # Readiness được phép kiểm tra dependency bên ngoài, ở đây là Redis.
+    redis_is_ready = store.ping()
+    if not redis_is_ready:
+        # Redis lỗi thì rút instance khỏi traffic, nhưng không restart container.
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "redis": False},
+        )
+
+    # Process và Redis đều hoạt động, instance sẵn sàng nhận request.
+    return {"status": "ready", "redis": True}
 
 
 # ─────────────────────────────────────────────────────────────
